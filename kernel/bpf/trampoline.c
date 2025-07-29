@@ -659,12 +659,24 @@ static void bpf_shim_tramp_link_release(struct bpf_link *link)
 	bpf_trampoline_put(shim_link->trampoline);
 }
 
+static void bpf_shim_tramp_link_free_rcu(struct rcu_head *rcu)
+{
+	struct bpf_shim_tramp_link *shim_link =
+		container_of(rcu, struct bpf_shim_tramp_link, rcu);
+
+	kfree(shim_link);
+}
+
 static void bpf_shim_tramp_link_dealloc(struct bpf_link *link)
 {
 	struct bpf_shim_tramp_link *shim_link =
 		container_of(link, struct bpf_shim_tramp_link, link.link);
 
-	kfree(shim_link);
+	/* Defer freeing to trace RCU grace period so that sleepable
+	 * contexts that may still hold references after link detachment
+	 * are safely quiesced.
+	 */
+	call_rcu_tasks_trace(&shim_link->rcu, bpf_shim_tramp_link_free_rcu);
 }
 
 static const struct bpf_link_ops bpf_shim_tramp_link_lops = {

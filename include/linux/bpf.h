@@ -1744,6 +1744,7 @@ struct bpf_tramp_link {
 struct bpf_shim_tramp_link {
 	struct bpf_tramp_link link;
 	struct bpf_trampoline *trampoline;
+	struct rcu_head rcu;
 };
 
 struct bpf_tracing_link {

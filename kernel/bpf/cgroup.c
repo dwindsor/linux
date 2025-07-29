@@ -18,6 +18,7 @@
 #include <linux/bpf_verifier.h>
 #include <net/sock.h>
 #include <net/bpf_sk_storage.h>
+#include <linux/rcupdate_trace.h>
 
 #include "../cgroup/cgroup-internal.h"
 
@@ -72,7 +73,7 @@ bpf_prog_run_array_cg(const struct cgroup_bpf *cgrp,
 
 	run_ctx.retval = retval;
 	migrate_disable();
-	rcu_read_lock();
+	rcu_read_lock_trace();
 	array = rcu_dereference(cgrp->effective[atype]);
 	item = &array->items[0];
 	old_run_ctx = bpf_set_run_ctx(&run_ctx.run_ctx);
@@ -88,7 +89,7 @@ bpf_prog_run_array_cg(const struct cgroup_bpf *cgrp,
 		item++;
 	}
 	bpf_reset_run_ctx(old_run_ctx);
-	rcu_read_unlock();
+	rcu_read_unlock_trace();
 	migrate_enable();
 	return run_ctx.retval;
 }
@@ -337,7 +338,7 @@ static void cgroup_bpf_release(struct work_struct *work)
 		old_array = rcu_dereference_protected(
 				cgrp->bpf.effective[atype],
 				lockdep_is_held(&cgroup_mutex));
-		bpf_prog_array_free(old_array);
+		bpf_prog_array_free_sleepable(old_array);
 	}
 
 	list_for_each_entry_safe(storage, stmp, storages, list_cg) {
@@ -492,12 +493,17 @@ static void activate_effective_progs(struct cgroup *cgrp,
 				     enum cgroup_bpf_attach_type atype,
 				     struct bpf_prog_array *old_array)
 {
+	/* Publish the new program array. */
 	old_array = rcu_replace_pointer(cgrp->bpf.effective[atype], old_array,
-					lockdep_is_held(&cgroup_mutex));
-	/* free prog array after grace period, since __cgroup_bpf_run_*()
-	 * might be still walking the array
+						lockdep_is_held(&cgroup_mutex));
+	
+	/*
+	 * Readers of ->effective[] use trace‑RCU read‑side primitives, so we
+	 * must wait for a full **trace RCU** grace period before freeing the
+	 * previous array.
 	 */
-	bpf_prog_array_free(old_array);
+	synchronize_rcu_tasks_trace();
+	bpf_prog_array_free_sleepable(old_array);
 }
 
 /**
@@ -537,7 +543,7 @@ static int cgroup_bpf_inherit(struct cgroup *cgrp)
 	return 0;
 cleanup:
 	for (i = 0; i < NR; i++)
-		bpf_prog_array_free(arrays[i]);
+		bpf_prog_array_free_sleepable(arrays[i]);
 
 	for (p = cgroup_parent(cgrp); p; p = cgroup_parent(p))
 		cgroup_bpf_put(p);
@@ -592,7 +598,7 @@ static int update_effective_progs(struct cgroup *cgrp,
 
 		if (percpu_ref_is_zero(&desc->bpf.refcnt)) {
 			if (unlikely(desc->bpf.inactive)) {
-				bpf_prog_array_free(desc->bpf.inactive);
+				bpf_prog_array_free_sleepable(desc->bpf.inactive);
 				desc->bpf.inactive = NULL;
 			}
 			continue;
@@ -611,7 +617,7 @@ cleanup:
 	css_for_each_descendant_pre(css, &cgrp->self) {
 		struct cgroup *desc = container_of(css, struct cgroup, self);
 
-		bpf_prog_array_free(desc->bpf.inactive);
+		bpf_prog_array_free_sleepable(desc->bpf.inactive);
 		desc->bpf.inactive = NULL;
 	}
 
@@ -901,7 +907,9 @@ static int cgroup_bpf_replace(struct bpf_link *link, struct bpf_prog *new_prog,
 	cg_link = container_of(link, struct bpf_cgroup_link, link);
 
 	cgroup_lock();
-	/* link might have been auto-released by dying cgroup, so fail */
+	/* link might have been auto-released by dying cgroup already,
+	 * in that case our work is done here
+	 */
 	if (!cg_link->cgroup) {
 		ret = -ENOLINK;
 		goto out_unlock;
@@ -1608,11 +1616,11 @@ int __cgroup_bpf_check_dev_permission(short dev_type, u32 major, u32 minor,
 	};
 	int ret;
 
-	rcu_read_lock();
+	rcu_read_lock_trace();
 	cgrp = task_dfl_cgroup(current);
 	ret = bpf_prog_run_array_cg(&cgrp->bpf, atype, &ctx, bpf_prog_run, 0,
 				    NULL);
-	rcu_read_unlock();
+	rcu_read_unlock_trace();
 
 	return ret;
 }
@@ -1795,11 +1803,11 @@ int __cgroup_bpf_run_filter_sysctl(struct ctl_table_header *head,
 		}
 	}
 
-	rcu_read_lock();
+	rcu_read_lock_trace();
 	cgrp = task_dfl_cgroup(current);
 	ret = bpf_prog_run_array_cg(&cgrp->bpf, atype, &ctx, bpf_prog_run, 0,
 				    NULL);
-	rcu_read_unlock();
+	rcu_read_unlock_trace();
 
 	kfree(ctx.cur_val);
 
