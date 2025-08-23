@@ -16,6 +16,7 @@
 #include <linux/uidgid.h>
 #include <linux/sched.h>
 #include <linux/sched/user.h>
+//#include <linux/bpf_local_storage.h>
 
 struct cred;
 struct inode;
@@ -85,6 +86,8 @@ static inline int groups_search(const struct group_info *group_info, kgid_t grp)
 }
 #endif
 
+struct bpf_local_storage;
+
 /*
  * The security context of a task
  *
@@ -139,6 +142,10 @@ struct cred {
 	struct user_namespace *user_ns; /* user_ns the caps and keyrings are relative to. */
 	struct ucounts *ucounts;
 	struct group_info *group_info;	/* supplementary groups for euid/fsgid */
+	
+#ifdef CONFIG_BPF_SYSCALL
+	struct bpf_local_storage __rcu *bpf_storage;	/* local storage for use in bpf */
+#endif
 	/* RCU deletion */
 	union {
 		int non_rcu;			/* Can we skip RCU deletion? */

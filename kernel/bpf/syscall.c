@@ -1259,7 +1259,8 @@ static int map_check_btf(struct bpf_map *map, struct bpf_token *token,
 				    map->map_type != BPF_MAP_TYPE_SK_STORAGE &&
 				    map->map_type != BPF_MAP_TYPE_INODE_STORAGE &&
 				    map->map_type != BPF_MAP_TYPE_TASK_STORAGE &&
-				    map->map_type != BPF_MAP_TYPE_CGRP_STORAGE) {
+				    map->map_type != BPF_MAP_TYPE_CGRP_STORAGE &&
+				    map->map_type != BPF_MAP_TYPE_CRED_STORAGE) {
 					ret = -EOPNOTSUPP;
 					goto free_map_tab;
 				}
@@ -1286,7 +1287,8 @@ static int map_check_btf(struct bpf_map *map, struct bpf_token *token,
 				    map->map_type != BPF_MAP_TYPE_SK_STORAGE &&
 				    map->map_type != BPF_MAP_TYPE_INODE_STORAGE &&
 				    map->map_type != BPF_MAP_TYPE_TASK_STORAGE &&
-				    map->map_type != BPF_MAP_TYPE_CGRP_STORAGE) {
+				    map->map_type != BPF_MAP_TYPE_CGRP_STORAGE &&
+				    map->map_type != BPF_MAP_TYPE_CRED_STORAGE) {
 					ret = -EOPNOTSUPP;
 					goto free_map_tab;
 				}
@@ -1347,6 +1349,18 @@ static int map_create(union bpf_attr *attr, bool kernel)
 	bool token_flag;
 	int f_flags;
 	int err;
+
+	pr_info("BPF_MAP_CREATE: map_type=%u name=%s key_size=%u value_size=%u max_entries=%u map_flags=0x%x\n",
+		attr->map_type, 
+		attr->map_name,
+		attr->key_size,
+		attr->value_size,
+		attr->max_entries,
+		attr->map_flags);
+	pr_info("BPF_MAP_CREATE: btf_key_type_id=%u btf_value_type_id=%u btf_fd=%d\n",
+		attr->btf_key_type_id,
+		attr->btf_value_type_id,
+		attr->btf_fd);
 
 	err = CHECK_ATTR(BPF_MAP_CREATE);
 	if (err)
@@ -1440,6 +1454,7 @@ static int map_create(union bpf_attr *attr, bool kernel)
 	case BPF_MAP_TYPE_RINGBUF:
 	case BPF_MAP_TYPE_USER_RINGBUF:
 	case BPF_MAP_TYPE_CGROUP_STORAGE:
+	case BPF_MAP_TYPE_CRED_STORAGE:
 	case BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE:
 		/* unprivileged */
 		break;

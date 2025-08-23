@@ -43,6 +43,7 @@ static inline struct bpf_storage_blob *bpf_inode(
 extern const struct bpf_func_proto bpf_inode_storage_get_proto;
 extern const struct bpf_func_proto bpf_inode_storage_delete_proto;
 void bpf_inode_storage_free(struct inode *inode);
+void bpf_cred_storage_free(struct cred *cred);
 
 void bpf_lsm_find_cgroup_shim(const struct bpf_prog *prog, bpf_func_t *bpf_func);
 

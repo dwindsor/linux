@@ -596,4 +596,16 @@ extern int bpf_iter_dmabuf_new(struct bpf_iter_dmabuf *it) __weak __ksym;
 extern struct dma_buf *bpf_iter_dmabuf_next(struct bpf_iter_dmabuf *it) __weak __ksym;
 extern void bpf_iter_dmabuf_destroy(struct bpf_iter_dmabuf *it) __weak __ksym;
 
+
+extern int bpf_cred_storage_get_dynptr(struct bpf_map *map, struct cred *cred,
+					struct bpf_dynptr *ptr, void *init,
+					__u32 init__sz, __u64 flags) __weak __ksym;
+
+/* Description
+ *	Delete cred local storage data
+ * Returns
+ *	0 on success, negative error on failure
+ */
+extern int bpf_cred_storage_delete(struct bpf_map *map, struct cred *cred) __weak __ksym;
+
 #endif
