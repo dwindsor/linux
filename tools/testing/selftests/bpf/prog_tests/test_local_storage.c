@@ -51,6 +51,21 @@ static int run_self_unlink(struct local_storage *skel, const char *rm_path)
 	return -EINVAL;
 }
 
+static void test_cred_storage(struct local_storage *skel)
+{
+	pid_t child;
+	int status;
+
+	child = fork();
+	if (child == 0) {
+		// Exit to force cred_free
+		exit(0);
+	} else if (child > 0) {
+		waitpid(child, &status, 0);
+		ASSERT_EQ(skel->data->cred_storage_result, 1, "cred_storage");
+	}
+}
+
 static bool check_syscall_operations(int map_fd, int obj_fd)
 {
 	struct storage val = { .value = TEST_STORAGE_VALUE },
@@ -160,6 +175,8 @@ void test_test_local_storage(void)
 	if (!check_syscall_operations(bpf_map__fd(skel->maps.sk_storage_map),
 				      serv_sk))
 		goto close_prog_rmdir;
+
+	test_cred_storage(skel);
 
 close_prog_rmdir:
 	snprintf(cmd, sizeof(cmd), "rm -rf %s", tmp_dir_path);
