@@ -17,6 +17,7 @@ __u32 monitored_pid = 0;
 int inode_storage_result = -1;
 int sk_storage_result = -1;
 int task_storage_result = -1;
+int cred_storage_result = -1;
 
 struct local_storage {
 	struct inode *exec_inode;
@@ -57,6 +58,13 @@ struct {
 	__type(key, int);
 	__type(value, struct local_storage);
 } task_storage_map2 SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_CRED_STORAGE);
+	__uint(map_flags, BPF_F_NO_PREALLOC);
+	__type(key, int);
+	__type(value, struct local_storage);
+} cred_storage_map SEC(".maps");
 
 SEC("lsm/inode_unlink")
 int BPF_PROG(unlink_hook, struct inode *dir, struct dentry *victim)
@@ -225,4 +233,43 @@ void BPF_PROG(exec, struct linux_binprm *bprm)
 		return;
 
 	storage->value = DUMMY_STORAGE_VALUE;
+}
+
+SEC("lsm.s/cred_prepare")
+int BPF_PROG(cred_prepare, struct cred *new, const struct cred *old, gfp_t gfp)
+{
+	__u32 pid = bpf_get_current_pid_tgid() >> 32;
+	struct bpf_dynptr value_dynptr;
+	struct local_storage *storage;
+	int ret;
+
+	if (pid != monitored_pid)
+		return 0;
+
+	cred_storage_result = -1;
+
+	/* Test getting existing storage */
+	ret = bpf_cred_storage_get(&cred_storage_map, (struct cred *)old, &value_dynptr, 0, 0, 0);
+	if (ret == 0) {
+		storage = bpf_dynptr_data(&value_dynptr, 0, sizeof(*storage));
+		if (storage && storage->value == DUMMY_STORAGE_VALUE) {
+			/* Create storage for new cred */
+			struct local_storage init_storage = { .value = DUMMY_STORAGE_VALUE };
+			ret = bpf_cred_storage_get(&cred_storage_map, new, &value_dynptr, 
+						   &init_storage, sizeof(init_storage), 
+						   BPF_LOCAL_STORAGE_GET_F_CREATE);
+			if (ret == 0)
+				cred_storage_result = 0;
+		}
+	} else if (ret == -ENOENT) {
+		/* No existing storage, create new one */
+		struct local_storage init_storage = { .value = DUMMY_STORAGE_VALUE };
+		ret = bpf_cred_storage_get(&cred_storage_map, new, &value_dynptr,
+					   &init_storage, sizeof(init_storage),
+					   BPF_LOCAL_STORAGE_GET_F_CREATE);
+		if (ret == 0)
+			cred_storage_result = 0;
+	}
+
+	return 0;
 }
