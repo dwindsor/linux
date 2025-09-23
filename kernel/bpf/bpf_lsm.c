@@ -375,6 +375,8 @@ BTF_ID(func, bpf_lsm_socket_shutdown)
 BTF_ID(func, bpf_lsm_socket_socketpair)
 #endif /* CONFIG_SECURITY_NETWORK */
 
+BTF_ID(func, bpf_lsm_ptrace_access_check)
+BTF_ID(func, bpf_lsm_ptrace_traceme)
 BTF_ID(func, bpf_lsm_syslog)
 BTF_ID(func, bpf_lsm_task_alloc)
 BTF_ID(func, bpf_lsm_task_prctl)
